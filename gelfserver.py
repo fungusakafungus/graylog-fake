@@ -10,11 +10,33 @@ SEQ_COUNT = 11
 CHUNKED_PAYLOAD = slice(12, None)
 
 
+import collections
+
+
+messages = collections.deque((), maxlen=200)
+#messages.append({
+#    'fields': {
+#        'message': 'test',
+#    }
+#})
+
+
+from collections import defaultdict
+from asyncio import Queue
+ws_queues = {}
+
+def store_message(message):
+    print('Recieved json:\n%r' % message)
+    messages.append(message)
+    print('Queues: %r' % ws_queues.keys())
+    for _, queue in ws_queues.items():
+        queue.put(message)
+        print('PUT')
+
+
 class GELFUdpProtocol:
-    import collections
 
     in_flight = {}
-    messages = collections.deque((), maxlen=200)
 
     def connection_made(self, transport):
         self.transport = transport
@@ -59,20 +81,63 @@ class GELFUdpProtocol:
         import json
         unmarshalled = json.loads(decompressed.decode())
 
-        print('Recieved json:\n%r' % unmarshalled)
-        self.messages.append(unmarshalled)
+        store_message(unmarshalled)
 
 
 @asyncio.coroutine
 def list_messages_handler(request):
     import json
-    text = b'\n'.join(json.dumps(m).encode() for m in GELFUdpProtocol.messages)
+    text = b'\n'.join(json.dumps(m).encode() for m in messages)
     return aiohttp.web.Response(body=text)
 
 
-loop = asyncio.new_event_loop()
+@asyncio.coroutine
+def stream_messages_handler(request):
+    ws = aiohttp.web.WebSocketResponse(protocols=['gelfserver'])
+    prepare_response = yield from ws.prepare(request)
+    print('prepared WS')
+    print('prepare response: %r' % prepare_response.status_line)
+
+    import json
+    for m in messages:
+        msg = {
+            'id': id(m),
+            'fields': m,
+        }
+        print('WS: will send')
+        ws.send_str(json.dumps(msg))
+        print('WS: sent')
+    import itertools
+    peername = request.transport.get_extra_info('peername', None)
+    if not peername:
+        print("peername: %r" % peername)
+        return ws
+
+    ws_queues[peername] = Queue()
+    print('WS GET: queues: %r' % ws_queues.keys())
+    while True:
+        m = yield from ws_queues[peername].get()
+        msg = {
+            'id': id(m),
+            'fields': m,
+        }
+        print('WS: GEN will send')
+        ws.send_str(json.dumps(msg))
+        print('WS: GEN sent')
+
+    #  text = b'\n'.join(json.dumps(m).encode() for m in GELFUdpProtocol.messages)
+    print('websocket connection closed')
+
+    return ws
+
+
+loop = asyncio.get_event_loop()
+loop.set_debug(1)
+import logging
+logging.basicConfig(level=logging.DEBUG)
 app = aiohttp.web.Application(loop=loop)
 app.router.add_route('GET', '/', list_messages_handler)
+app.router.add_route('*', '/ws', stream_messages_handler)
 print("Starting UDP server")
 # One protocol instance will be created to serve all client requests
 listen = loop.create_datagram_endpoint(
@@ -95,7 +160,7 @@ except KeyboardInterrupt:
 srv.close()
 loop.run_until_complete(srv.wait_closed())
 loop.run_until_complete(app.shutdown())
-loop.run_until_complete(http_handler.finish_connections(60.0))
+loop.run_until_complete(http_handler.finish_connections(1.0))
 loop.run_until_complete(app.cleanup())
 
 transport.close()
