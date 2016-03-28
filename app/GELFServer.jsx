@@ -1,6 +1,7 @@
 import React from 'react';
 import {Col, Row} from 'react-bootstrap';
 import { ResultTable, SearchSidebar } from 'components/search';
+import { Websocket } from 'components/Websocket';
 
 import Immutable from 'immutable';
 import 'stylesheets/bootstrap.min.css'
@@ -39,14 +40,14 @@ const GELFServer = React.createClass({
     },
     _fields() {
         var result = this.state.messages.reduce(
-            function (m1, m2) {
+            function (list, message) {
                 return Immutable.List(
-                    Immutable.Set(Object.keys(m1.fields)).union(
-                        Immutable.Set(Object.keys(m2.fields))
+                    Immutable.Set(list).union(
+                        Immutable.Set(Object.keys(message.fields))
                     )
                 );
             },
-            {fields: {}}
+            Immutable.List()
         );
         console.log('_fields', result);
 
@@ -77,6 +78,13 @@ const GELFServer = React.createClass({
             newFieldSet = currentFields.add(fieldName);
         }
         this.updateSelectedFields(newFieldSet);
+    },
+
+    onMessage(message) {
+        console.log(message);
+        this.setState({
+            messages: this.state.messages.concat([message])
+        });
     },
 
     render: function () {
@@ -111,6 +119,13 @@ const GELFServer = React.createClass({
                                      searchConfig={this.state.searchConfig}
                         />
                     </Col>
+
+
+                    <Websocket url="ws://localhost:3000/ws"
+                               onMessage={this.onMessage}
+                               debug={true}
+                               protocol="gelfserver"
+                    />
                 </Row>
         );
     }
