@@ -1,5 +1,8 @@
 import asyncio
 import aiohttp.web
+import json
+
+asyncio.ensure_future = asyncio.async
 
 
 CHUNKED_SIG_POS = slice(0, 2)
@@ -25,13 +28,17 @@ from collections import defaultdict
 from asyncio import Queue
 ws_queues = {}
 
+
+@asyncio.coroutine
 def store_message(message):
-    print('Recieved json:\n%r' % message)
+    #print('Recieved json:\n%r' % message)
     messages.append(message)
     print('Queues: %r' % ws_queues.keys())
-    for _, queue in ws_queues.items():
-        queue.put(message)
+    for transport, queue in ws_queues.items():
+        print('will PUT m to %r' % (transport,))
+        yield from queue.put(message)
         print('PUT')
+
 
 
 class GELFUdpProtocol:
@@ -63,7 +70,7 @@ class GELFUdpProtocol:
             ([None] * seq_count, set(range(seq_count)))
         )
         # print('in_flight: %r' % (self.in_flight))
-        print('chunks: %r, seq_num: %r' % (chunks, seq_num))
+        # print('chunks: %r, seq_num: %r' % (chunks, seq_num))
         chunks[seq_num] = data[CHUNKED_PAYLOAD]
         chunk_counter -= {seq_num}
         self.in_flight[msg_id] = chunks, chunk_counter
@@ -78,10 +85,10 @@ class GELFUdpProtocol:
             decompressed = zlib.decompress(data)
         except zlib.error:
             decompressed = data
-        import json
         unmarshalled = json.loads(decompressed.decode())
 
-        store_message(unmarshalled)
+        asyncio.ensure_future(store_message(unmarshalled))
+        print('process_compressed yield from store_message')
 
 
 @asyncio.coroutine
@@ -89,6 +96,20 @@ def list_messages_handler(request):
     import json
     text = b'\n'.join(json.dumps(m).encode() for m in messages)
     return aiohttp.web.Response(body=text)
+
+
+@asyncio.coroutine
+def send_queue(ws, q):
+    while True:
+        print('WS GET queue length: %r' % q.qsize())
+        m = yield from q.get()
+        msg = {
+            'id': id(m),
+            'fields': m,
+        }
+        print('WS: GEN will send')
+        ws.send_str(json.dumps(msg))
+        print('WS: GEN sent')
 
 
 @asyncio.coroutine
@@ -110,22 +131,14 @@ def stream_messages_handler(request):
     import itertools
     peername = request.transport.get_extra_info('peername', None)
     if not peername:
-        print("peername: %r" % peername)
-        return ws
+        raise KeyError('peername')
 
-    ws_queues[peername] = Queue()
+    q = Queue()
+    ws_queues[peername] = q
+    yield from send_queue(ws, q)
+
     print('WS GET: queues: %r' % ws_queues.keys())
-    while True:
-        m = yield from ws_queues[peername].get()
-        msg = {
-            'id': id(m),
-            'fields': m,
-        }
-        print('WS: GEN will send')
-        ws.send_str(json.dumps(msg))
-        print('WS: GEN sent')
 
-    #  text = b'\n'.join(json.dumps(m).encode() for m in GELFUdpProtocol.messages)
     print('websocket connection closed')
 
     return ws
@@ -135,17 +148,17 @@ loop = asyncio.get_event_loop()
 loop.set_debug(1)
 import logging
 logging.basicConfig(level=logging.DEBUG)
-app = aiohttp.web.Application(loop=loop)
-app.router.add_route('GET', '/', list_messages_handler)
-app.router.add_route('*', '/ws', stream_messages_handler)
+
 print("Starting UDP server")
-# One protocol instance will be created to serve all client requests
 listen = loop.create_datagram_endpoint(
     GELFUdpProtocol, local_addr=('127.0.0.1', 12201))
 
-transport, protocol = loop.run_until_complete(listen)
+udp_transport, _ = loop.run_until_complete(listen)
 
 print("Starting HTTP server")
+app = aiohttp.web.Application(loop=loop)
+app.router.add_route('GET', '/', list_messages_handler)
+app.router.add_route('*', '/ws', stream_messages_handler)
 http_handler = app.make_handler()
 f = loop.create_server(
     http_handler, '127.0.0.1', 3000)
@@ -163,5 +176,5 @@ loop.run_until_complete(app.shutdown())
 loop.run_until_complete(http_handler.finish_connections(1.0))
 loop.run_until_complete(app.cleanup())
 
-transport.close()
+udp_transport.close()
 loop.close()
