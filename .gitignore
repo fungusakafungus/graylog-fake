@@ -1,0 +1,6 @@
+*.sw[op]
+.idea/
+*.pyc
+public/bundle.js
+npm-debug.log
+node_modules
