@@ -4,6 +4,8 @@ For use as graylog fake/somewhat centralized logging in development. Might be us
 
 #### development
 
+React part:
+
 ```
 $ nvm use
 $ npm i
@@ -11,3 +13,14 @@ $ npm start
 ```
 
 Go to http://localhost:8080
+
+Python part:
+
+Needs at least python3.4 for the `asyncio` stuff.
+```
+$ mkvirtualenv -p python3 graylog-fake
+$ pip install -r requirements.txt
+$ python gelfserver.py
+```
+
+Go to http://localhost:3000
