@@ -1,4 +1,5 @@
 import asyncio
+import aiohttp.web
 
 
 CHUNKED_SIG_POS = slice(0, 2)
@@ -10,8 +11,10 @@ CHUNKED_PAYLOAD = slice(12, None)
 
 
 class GELFUdpProtocol:
+    import collections
 
     in_flight = {}
+    messages = collections.deque((), maxlen=200)
 
     def connection_made(self, transport):
         self.transport = transport
@@ -57,19 +60,43 @@ class GELFUdpProtocol:
         unmarshalled = json.loads(decompressed.decode())
 
         print('Recieved json:\n%r' % unmarshalled)
+        self.messages.append(unmarshalled)
+
+
+@asyncio.coroutine
+def list_messages_handler(request):
+    import json
+    text = b'\n'.join(json.dumps(m).encode() for m in GELFUdpProtocol.messages)
+    return aiohttp.web.Response(body=text)
 
 
 loop = asyncio.new_event_loop()
+app = aiohttp.web.Application(loop=loop)
+app.router.add_route('GET', '/', list_messages_handler)
 print("Starting UDP server")
 # One protocol instance will be created to serve all client requests
 listen = loop.create_datagram_endpoint(
     GELFUdpProtocol, local_addr=('127.0.0.1', 12201))
+
 transport, protocol = loop.run_until_complete(listen)
+
+print("Starting HTTP server")
+http_handler = app.make_handler()
+f = loop.create_server(
+    http_handler, '127.0.0.1', 3000)
+srv = loop.run_until_complete(f)
+print('serving on', srv.sockets[0].getsockname())
 
 try:
     loop.run_forever()
 except KeyboardInterrupt:
     pass
+
+srv.close()
+loop.run_until_complete(srv.wait_closed())
+loop.run_until_complete(app.shutdown())
+loop.run_until_complete(http_handler.finish_connections(60.0))
+loop.run_until_complete(app.cleanup())
 
 transport.close()
 loop.close()
