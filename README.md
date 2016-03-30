@@ -24,3 +24,10 @@ $ python gelfserver.py
 ```
 
 Go to http://localhost:3000
+
+### Run in docker:
+
+```
+$ docker build -t graylog-fake .
+$ docker run -ti --rm --name graylog-fake -p 8080:80 -p 3000:3000 -p 12201/udp:12201/udp graylog-fake
+```

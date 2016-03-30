@@ -75,7 +75,9 @@ class GELFUdpProtocol:
         chunk_counter -= {seq_num}
         self.in_flight[msg_id] = chunks, chunk_counter
         if not chunk_counter:
-            print('Got all %r chunks of %r' % (seq_count, hexlify(msg_id).decode()))
+            print('Got all %r chunks of %r' % (
+                seq_count, hexlify(msg_id).decode())
+            )
             del self.in_flight[msg_id]
             self.process_compressed(b''.join(chunks))
 
@@ -151,17 +153,17 @@ logging.basicConfig(level=logging.DEBUG)
 
 print("Starting UDP server")
 listen = loop.create_datagram_endpoint(
-    GELFUdpProtocol, local_addr=('127.0.0.1', 12201))
+    GELFUdpProtocol, local_addr=('0.0.0.0', 12201))
 
 udp_transport, _ = loop.run_until_complete(listen)
 
 print("Starting HTTP server")
 app = aiohttp.web.Application(loop=loop)
 app.router.add_route('GET', '/', list_messages_handler)
-app.router.add_route('*', '/ws', stream_messages_handler)
+app.router.add_route('GET', '/ws', stream_messages_handler)
 http_handler = app.make_handler()
 f = loop.create_server(
-    http_handler, '127.0.0.1', 3000)
+    http_handler, '0.0.0.0', 3000)
 srv = loop.run_until_complete(f)
 print('serving on', srv.sockets[0].getsockname())
 

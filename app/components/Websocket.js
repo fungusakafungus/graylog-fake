@@ -30,7 +30,6 @@ var WebsocketComponent = React.createClass({
             }
             self._initWebsocket();
         }, 1000);
-        console.log('retry:', retry);
         self.ws = new W3CWebSocket(self.props.url, [self.props.protocol]);
 
         self.ws.onopen = function () {
