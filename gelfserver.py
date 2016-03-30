@@ -33,7 +33,7 @@ ws_queues = {}
 def store_message(message):
     #print('Recieved json:\n%r' % message)
     messages.append(message)
-    print('Queues: %r' % ws_queues.keys())
+    print('Queues: %r' % list(ws_queues.keys()))
     for transport, queue in ws_queues.items():
         print('will PUT m to %r' % (transport,))
         yield from queue.put(message)
@@ -75,7 +75,7 @@ class GELFUdpProtocol:
         chunk_counter -= {seq_num}
         self.in_flight[msg_id] = chunks, chunk_counter
         if not chunk_counter:
-            print('Got all %r chunks of %r' % (seq_count, msg_id))
+            print('Got all %r chunks of %r' % (seq_count, hexlify(msg_id).decode()))
             del self.in_flight[msg_id]
             self.process_compressed(b''.join(chunks))
 
@@ -137,7 +137,7 @@ def stream_messages_handler(request):
     ws_queues[peername] = q
     yield from send_queue(ws, q)
 
-    print('WS GET: queues: %r' % ws_queues.keys())
+    print('WS GET: queues: %r' % list(ws_queues.keys()))
 
     print('websocket connection closed')
 
