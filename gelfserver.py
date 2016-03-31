@@ -102,42 +102,51 @@ def list_messages_handler(request):
 
 @asyncio.coroutine
 def send_queue(ws, q):
+    def send(msg):
+        import json
+        marshalled = json.dumps({
+            'id': id(msg),
+            'fields': msg,
+        })
+        ws.send_str(marshalled)
+
+    for m in messages:
+        print('WS: will send')
+        send(m)
+        print('WS: sent')
+
     while True:
         print('WS GET queue length: %r' % q.qsize())
+        print('Sending PING')
+        ws.send_str('PING');
+        try:
+            with aiohttp.Timeout(2):
+                resp = yield from ws.receive_str()
+                print('Received PONG: %r' % resp)
+                assert resp == 'PONG'
+        except (asyncio.TimeoutError, AssertionError, TypeError):
+            raise asyncio.TimeoutError()
+
         m = yield from q.get()
-        msg = {
-            'id': id(m),
-            'fields': m,
-        }
-        print('WS: GEN will send')
-        ws.send_str(json.dumps(msg))
-        print('WS: GEN sent')
+        send(m)
 
 
 @asyncio.coroutine
 def stream_messages_handler(request):
     ws = aiohttp.web.WebSocketResponse(protocols=['gelfserver'])
     prepare_response = yield from ws.prepare(request)
-    print('prepared WS')
     print('prepare response: %r' % prepare_response.status_line)
 
-    import json
-    for m in messages:
-        msg = {
-            'id': id(m),
-            'fields': m,
-        }
-        print('WS: will send')
-        ws.send_str(json.dumps(msg))
-        print('WS: sent')
-    import itertools
     peername = request.transport.get_extra_info('peername', None)
     if not peername:
         raise KeyError('peername')
 
     q = Queue()
     ws_queues[peername] = q
-    yield from send_queue(ws, q)
+    try:
+        yield from send_queue(ws, q)
+    except (asyncio.TimeoutError, AssertionError):
+        del ws_queues[peername]
 
     print('WS GET: queues: %r' % list(ws_queues.keys()))
 

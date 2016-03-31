@@ -105,7 +105,7 @@ const GELFServer = React.createClass({
 
                     <Websocket url={"ws://" + location.hostname + ":3000/ws"}
                                onMessage={this.onMessage}
-                               debug={false}
+                               debug={true}
                                protocol="gelfserver"
                     />
                 </Row>

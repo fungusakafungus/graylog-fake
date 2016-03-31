@@ -32,24 +32,29 @@ var WebsocketComponent = React.createClass({
         }, 1000);
         self.ws = new W3CWebSocket(self.props.url, [self.props.protocol]);
 
-        self.ws.onopen = function () {
+        self.ws.onopen = function (event) {
+            if (self.ws !== event.target) {
+                return;
+            }
             self.log('WebSocket Client Connected');
             clearTimeout(retry);
             self.ws.onerror = function (error) {
                 self.log("Connection Error: " + error.toString());
-                clearTimeout(retry);
             };
             self.ws.onclose = function () {
                 self.log('Connection Closed');
-                clearTimeout(retry);
                 self._initWebsocket();
             };
             self.ws.onmessage = function (message) {
+                self.log("Received: ", message);
                 if (typeof message.data === 'string') {
-                    self.log("Received: '" + message.data + "'");
+                    if (message.data === 'PING') {
+                        self.ws.send('PONG');
+                    } else {
+                        var data = JSON.parse(message.data);
+                        self.props.onMessage(data);
+                    }
                 }
-                var data = JSON.parse(message.data);
-                self.props.onMessage(data);
             };
         };
     },
