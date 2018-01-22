@@ -10,7 +10,7 @@
     "css-loader": "^0.23.0",
     "immutable": "^3.7.6",
     "javascript-natural-sort": "~0.7.1",
-    "jquery": "~2.2.2",
+    "jquery": "~3.0.0",
     "json-loader": "~0.5.4",
     "moment-timezone": "0.4.1",
     "numeral": "^1.5.3",
